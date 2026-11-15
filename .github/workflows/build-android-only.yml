@@ -20,7 +20,7 @@ jobs:
       - name: 版本号（直接取 tauri.conf.json）
         id: ver
         shell: bash
-        run: echo "version=$(curl -fs https://raw.githubusercontent.com/ipenghot-ship-it/HGhub/main/src-tauri/tauri.conf.json | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | grep -o '"[^"]*"\\+$' | tr -d '\"')" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(curl -fs https://raw.githubusercontent.com/ipenghot-ship-it/HGhub/main/src-tauri/tauri.conf.json | grep -o '\"version\"[[:space:]]*:[[:space:]]*\"[^\"]*\"' | head -1 | sed -E 's/.*:[[:space:]]*"([^"]*)".*/\1/')" >> "$GITHUB_OUTPUT"
 
       - uses: pnpm/action-setup@v4
         with:
