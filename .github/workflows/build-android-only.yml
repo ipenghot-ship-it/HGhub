@@ -80,7 +80,7 @@ jobs:
             SPASS="${STORE_PASSWORD:-}"; KPASS="${KEY_PASSWORD:-}"
           else
             # fork 无 secret：本地生成自签 keystore（仅自装用途）
-            KS="$RUNNERtemp_local/keystore.jks"; mkdir -p "$(dirname "$KS")"
+            KS="$RUNNER_TEMP/local/keystore.jks"; mkdir -p "$(dirname "$KS")"
             keytool -genkeypair -v -keystore "$KS" -alias hghub \
               -keyalg RSA -keysize 2048 -validity 10950 \
               -dname "CN=HGhub Fork, OU=CI, O=Local, L=Local, ST=Local, C=US" \
