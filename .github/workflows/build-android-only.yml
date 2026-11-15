@@ -17,10 +17,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 版本号（取 tauri.conf.json）
+      - name: 版本号（直接取 tauri.conf.json）
         id: ver
         shell: bash
-        run: echo "version=$(node -p \"require('./src-tauri/tauri.conf.json').version\")" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(curl -fs https://raw.githubusercontent.com/ipenghot-ship-it/HGhub/main/src-tauri/tauri.conf.json | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | grep -o '"[^"]*"\\+$' | tr -d '\"')" >> "$GITHUB_OUTPUT"
 
       - uses: pnpm/action-setup@v4
         with:
