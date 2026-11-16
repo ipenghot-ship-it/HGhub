@@ -123,6 +123,8 @@ type Store = {
   fs: boolean; setFs: (v: boolean | ((p: boolean) => boolean)) => void;
   /** 清屏模式（单击屏幕消除所有控件，只保留纯视频内容） */
   clean: boolean; setClean: (v: boolean | ((p: boolean) => boolean)) => void;
+  /** 连播态（Feed 点「看完整剧」进入的剧内连播沉浸层）——提升到 store 供 App 层隐藏 TabBar/bottomInset */
+  bingeOn: boolean; setBingeOn: (v: boolean) => void;
   muted: boolean; setMuted: (v: boolean | ((p: boolean) => boolean)) => void;
   muteOnStartup: boolean; setMuteOnStartup: (on: boolean) => void;
   volume: number; setVolume: (v: number) => void;
@@ -146,6 +148,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [theater, setTheaterState] = useState(false);
   const [fs, setFsState] = useState(false);
   const [clean, setCleanState] = useState(false);
+  const [bingeOn, setBingeOn] = useState(false);
   const [strictSecurity, setStrictSecurityState] = useState<boolean>(isStrictSecurity);
   const [cliRelaxed, setCliRelaxed] = useState(false);
   const [strictSecurityReady, setStrictSecurityReady] = useState(false);
@@ -297,6 +300,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     toggleLikeLocal, toggleFavLocal, toggleFollowLocal, addHistory, clearHistory,
     muted: p.muted, setMuted, volume: p.volume, setVolume,
     theater, setTheater, fs, setFs, clean, setClean,
+    bingeOn, setBingeOn,
     muteOnStartup: p.muteOnStartup, setMuteOnStartup,
     searchHist: p.searchHist, addSearch, clearSearchHist,
     strictSecurity, strictSecurityReady, securityPending, cliRelaxed, setStrictSecurity,

@@ -72,6 +72,12 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
     toast("看完啦，为你推荐更多内容！", "info");
   });
   const { isBinge: bingeOn, modeRef: bingeRef, enter: enterBinge, exit: exitBinge } = binge;
+  /* 连播态同步到 store：App 层据此隐藏 TabBar + bottomInset 归零，让选集通栏贴底成沉浸层 */
+  const { setBingeOn: syncBingeToStore } = useStore();
+  useEffect(() => {
+    syncBingeToStore(bingeOn);
+    return () => syncBingeToStore(false); // Feed 卸载时兜底复位
+  }, [bingeOn, syncBingeToStore]);
   /* #9 续播×连播兼容：若从观看记录进入（有 startEp），自动进入连播并跳到对应集 */
   const bingeAutoInitRef = useRef(false);
   /* 详情加载完后再决定是否自动进 binge（避免空 episodes 导致漏触发）*/
@@ -665,7 +671,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                   }}>
                   <div
                     className="absolute inset-0 overflow-hidden"
-                    style={{ touchAction: fs || zoom.scale > 1.05 ? "none" : "pan-y" }}
+                    style={{ touchAction: fs || zoom.scale > 1.05 || bingeOn ? "none" : "pan-y" }}
                     onTouchStart={onTouchStart}
                     onTouchMove={onTouchMove}
                     onTouchEnd={onTouchEnd}
@@ -1087,7 +1093,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
       {bingeOn && !fs && !isDesktop && kind === "video" && episodes.length > 1 && (
         <button onClick={() => setPanel("episodes")} aria-label="选集"
           className="absolute inset-x-3 z-30 flex items-center gap-2 rounded-xl bg-white/8 px-4 h-12 pressable elev-1"
-          style={{ bottom: `calc(var(--sab, 0px) + ${bottomInset + 198}px)` }}>
+          style={{ bottom: `calc(var(--sab, 0px) + 12px)` }}>
           <IList size={17} className="hg-ink shrink-0" />
           <span className="text-[13px] font-bold hg-ink">选集</span>
           <span className="hg-ink-3">·</span>
