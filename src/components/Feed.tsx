@@ -296,7 +296,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
 
   /* 滚动定位（全屏或缩放手势期间锁定索引，避免容器尺寸变化误触发翻页） */
   const onScroll = useCallback(() => {
-    if (fs || pinchRef.current || bingeRef.current) return; // 连播态锁定：不因滑动换剧
+    if (fs || pinchRef.current || bingeRef.current === "binge") return; // 连播态锁定：不因滑动换剧
     const el = boxRef.current;
     if (!el) return;
     const h = el.clientHeight || 1;
@@ -307,7 +307,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   }, [videoIds.length, onNearEnd, fs, index, videoIds]);
 
   const go = useCallback((delta: number) => {
-    if (bingeRef.current) return; // 连播态锁定换剧（切集走 pickEp，不走 go）
+    if (bingeRef.current === "binge") return; // 连播态锁定换剧（切集走 pickEp，不走 go）
     const el = boxRef.current;
     if (!el) return;
     const next = Math.max(0, Math.min(videoIds.length - 1, index + delta));
@@ -464,7 +464,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
     toast,
     /* 连播态垂直滑动切集：上滑(+1)下一集 / 下滑(-1)上一集，边界内切换 */
     onBingeSwipe: (dir) => {
-      if (!bingeRef.current) return;
+      if (bingeRef.current !== "binge") return;
       const next = curEp + dir;
       if (next < 1 || next > episodes.length) return; // 越界不动（末集下滑不跳剧，返回键才退连播）
       pickEp(next);
