@@ -1063,10 +1063,10 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                     )}
                   </div>
                   {/* 红果式「观看完整剧情」底部通栏横幅：仅短剧多集、非连播态显示 */}
-                  {kind === "video" && episodes.length > 1 && !bingeOn && (
+                  {kind === "video" && episodes.length > 1 && !bingeOn && isActive && (
                     <button onClick={enterBinge} aria-label="观看完整剧情"
-                      className="absolute inset-x-0 flex items-center gap-2.5 px-4 h-12 bg-s2 pressable"
-                      style={{ top: "100%" }}>
+                      className="absolute inset-x-0 z-30 flex items-center gap-2.5 px-4 h-12 bg-s2 pressable"
+                      style={{ bottom: `calc(var(--sab, 0px) + ${bottomInset}px)` }}>
                       <span className="w-6 h-6 rounded-[5px] bg-white/12 flex items-center justify-center shrink-0">
                         <IPlayF size={11} className="hg-ink ml-px" />
                       </span>

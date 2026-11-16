@@ -31,3 +31,14 @@ docs/API.md
 
 # Agent instructions (local)
 AGENTS.md
+
+# 浏览器调试平台（本地开发用，不入库）
+scripts/dev-*.mjs
+scripts/mock-fixtures.js
+scripts/verify-three-capabilities.mjs
+scripts/demo-three-capabilities.mjs
+scripts/diagnose-*.mjs
+scripts/test-*.mjs
+scripts/verify-binge-*.mjs
+fixtures/
+src/dev/
