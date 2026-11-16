@@ -277,6 +277,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const setClean = useCallback((v: boolean | ((prev: boolean) => boolean)) => {
     setCleanState((prev) => (typeof v === "function" ? (v as (p: boolean) => boolean)(prev) : v));
   }, []);
+  /* 稳定引用：避免每次渲染新函数导致 Feed 的同步 effect 反复触发 */
+  const setBingeOnStable = useCallback((v: boolean) => setBingeOn(v), []);
 
   const setMuted = useCallback((v: boolean | ((prev: boolean) => boolean)) => {
     setP((s) => ({ ...s, muted: typeof v === "function" ? v(s.muted) : v }));
@@ -300,7 +302,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     toggleLikeLocal, toggleFavLocal, toggleFollowLocal, addHistory, clearHistory,
     muted: p.muted, setMuted, volume: p.volume, setVolume,
     theater, setTheater, fs, setFs, clean, setClean,
-    bingeOn, setBingeOn,
+    bingeOn, setBingeOn: setBingeOnStable,
     muteOnStartup: p.muteOnStartup, setMuteOnStartup,
     searchHist: p.searchHist, addSearch, clearSearchHist,
     strictSecurity, strictSecurityReady, securityPending, cliRelaxed, setStrictSecurity,
