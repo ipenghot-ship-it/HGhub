@@ -55,6 +55,9 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   /* 取播放地址失败后手动重试：递增即重新触发拉取 */
   const [playTry, setPlayTry] = useState(0);
   const [panel, setPanel] = useState<"episodes" | "comments" | "article" | "detail" | null>(null);
+  /* 连播态(binge)：点「看完整剧」进入，锁定当前剧自动连播(沿用 onEnded→pickEp)。
+     进入后禁滑动换剧，往下滑/返回键/退出按钮才回 feed。 */
+  const [binge, setBinge] = useState(false);
   const [descOpen, setDescOpen] = useState(false);
   /* 续播：拿到时长后再 seek 一次（只对进入时那一条生效） */
   const resumeRef = useRef<{ key: string; t: number } | null>(
@@ -69,6 +72,12 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   const setFs = store.setFs;
   const clean = store.clean;
   const setClean = store.setClean;
+
+  /* 连播态引用：供 onScroll/go/手势等非 React 回调同步读取，避免闭包拿到旧值误换剧 */
+  const bingeRef = useRef(false);
+  useEffect(() => { bingeRef.current = binge; }, [binge]);
+  const enterBinge = useCallback(() => { setBinge(true); }, []);
+  const exitBinge = useCallback(() => { setBinge(false); }, []);
 
   /* 追踪手机视口是否已处于物理/系统横屏状态（window.innerWidth > window.innerHeight） */
   const [vpLandscape, setVpLandscape] = useState(
@@ -309,7 +318,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
 
   /* 滚动定位（全屏或缩放手势期间锁定索引，避免容器尺寸变化误触发翻页） */
   const onScroll = useCallback(() => {
-    if (fs || pinchRef.current) return;
+    if (fs || pinchRef.current || bingeRef.current) return; // 连播态锁定：不因滑动换剧
     const el = boxRef.current;
     if (!el) return;
     const h = el.clientHeight || 1;
@@ -319,6 +328,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   }, [videoIds.length, onNearEnd, fs]);
 
   const go = useCallback((delta: number) => {
+    if (bingeRef.current) return; // 连播态锁定换剧（切集走 pickEp，不走 go）
     const el = boxRef.current;
     if (!el) return;
     const next = Math.max(0, Math.min(videoIds.length - 1, index + delta));
@@ -439,12 +449,16 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, controlsLocked, panel, time, index]);
 
-  /* 安卓返回键：面板打开时先关面板 */
+  /* 安卓返回键层级：面板开着先关面板 → 连播态先退连播 → 其余交回上层 */
   useEffect(() => {
-    if (!panel) { setBackHandler(null); return undefined; }
-    setBackHandler(() => { setPanel(null); return true; });
+    if (!panel && !binge) { setBackHandler(null); return undefined; }
+    setBackHandler(() => {
+      if (panel) { setPanel(null); return true; }
+      if (binge) { setBinge(false); return true; }
+      return false;
+    });
     return () => setBackHandler(null);
-  }, [panel]);
+  }, [panel, binge]);
 
   useEffect(() => {
     const onFs = () => setFullscreen(!!document.fullscreenElement);
@@ -791,7 +805,7 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
       )}
 
       <div ref={boxRef} onScroll={onScroll}
-        className={`absolute inset-y-0 left-0 no-bar ${fs ? "overflow-hidden" : "overflow-y-scroll snap-y snap-mandatory overscroll-y-contain"}`}
+        className={`absolute inset-y-0 left-0 no-bar ${(fs || binge) ? "overflow-hidden" : "overflow-y-scroll snap-y snap-mandatory overscroll-y-contain"}`}
         style={{ right: isDesktop && panel ? 372 : 0, transition: "right .3s cubic-bezier(.2,0,0,1)" }}>
         {videoIds.map((vid, i) => {
           const isActive = i === index;
@@ -836,7 +850,12 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                       onPlaying={() => { setPaused(false); setWaiting(false); setErr(""); }}
                       onPause={() => setPaused(true)}
                       onWaiting={() => setWaiting(true)}
-                      onEnded={() => { const next = episodes.find((e) => e.ep_num === curEp + 1); if (next) pickEp(next.ep_num); }}
+                      onEnded={() => {
+                        const next = episodes.find((e) => e.ep_num === curEp + 1);
+                        if (next) { pickEp(next.ep_num); return; }
+                        // 连播态播完最后一集：自动退出连播回 feed（停留在末集，用户可滑动换剧）
+                        if (bingeRef.current) setBinge(false);
+                      }}
                       onError={(m) => setErr(m)}
                     />
                   </div>
@@ -1068,6 +1087,15 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                     <ICommentF size={26} className="hg-ink hg-ov-shadow" />
                     <span className="text-[10.5px] hg-ink-2 hg-ov-shadow">评论</span>
                   </button>
+                  {/* 看完整剧：进入连播态（锁定当前剧自动连播），仅短剧且有多集时显示 */}
+                  {kind === "video" && episodes.length > 1 && !binge && (
+                    <button onClick={enterBinge} className="flex flex-col items-center gap-1 pressable" aria-label="看完整剧">
+                      <span className="w-[27px] h-[27px] rounded-full bg-primary flex items-center justify-center elev-1">
+                        <IPlayF size={13} className="text-on-primary ml-px" />
+                      </span>
+                      <span className="text-[10.5px] hg-ink-2 hg-ov-shadow">看完整剧</span>
+                    </button>
+                  )}
                   <button onClick={enterFs} className="flex flex-col items-center gap-1 pressable" aria-label="全屏">
                     <IExpand size={26} className="hg-ink hg-ov-shadow" />
                     <span className="text-[10.5px] hg-ink-2 hg-ov-shadow">全屏</span>
@@ -1115,6 +1143,16 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                       <IList size={26} className="text-white tsh" />
                       <span className="text-[10.5px] text-white/90">选集</span>
                     </button>
+
+                    {/* 连播：进入连播态锁定当前剧自动连播，仅多集短剧显示 */}
+                    {episodes.length > 1 && !binge && (
+                      <button onClick={enterBinge} className="flex flex-col items-center gap-1 pressable" aria-label="连播" title="连播">
+                        <span className="w-[26px] h-[26px] rounded-full bg-primary flex items-center justify-center">
+                          <IPlayF size={13} className="text-on-primary ml-px" />
+                        </span>
+                        <span className="text-[10.5px] text-white/90">连播</span>
+                      </button>
+                    )}
                   </>
                 )}
 
@@ -1186,6 +1224,30 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
           );
         })}
       </div>
+
+      {/* 连播态(binge)顶部悬浮条：剧名 + 集数 + 退出。锁定当前剧，退出或返回键回 feed */}
+      {binge && !fs && (
+        <div className="absolute inset-x-0 top-0 z-40 flex items-center gap-2 px-3 pt-2 pb-3 bg-gradient-to-b from-black/80 to-transparent"
+          style={{ paddingTop: "calc(var(--sat, 0px) + 8px)" }}>
+          <button onClick={exitBinge} aria-label="退出连播"
+            className="w-9 h-9 rounded-full backdrop-blur-md flex items-center justify-center pressable elev-1"
+            style={{ background: "rgba(0,0,0,.5)", color: "#fff" }}>
+            <IBack size={19} />
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13.5px] font-bold hg-ink hg-ov-shadow clamp-1">{meta.title || "连播中"}</div>
+            <div className="text-[10.5px] hg-ink-2 hg-ov-shadow">连播 · 第 {curEp}/{episodes.length || "?"} 集</div>
+          </div>
+          <button onClick={() => setPanel("episodes")} aria-label="选集"
+            className="px-3 h-8 rounded-full hg-chip-strong backdrop-blur-md flex items-center gap-1 text-[12px] font-semibold pressable elev-1">
+            <IList size={15} />选集
+          </button>
+          <button onClick={exitBinge} aria-label="退出连播"
+            className="px-3 h-8 rounded-full hg-chip-strong backdrop-blur-md flex items-center gap-1 text-[12px] font-semibold pressable elev-1">
+            <IClose size={15} />退出连播
+          </button>
+        </div>
+      )}
 
       {/* 桌面控制条 */}
       {isDesktop && (
