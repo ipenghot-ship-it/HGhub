@@ -57,10 +57,24 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   /* 取播放地址失败后手动重试：递增即重新触发拉取 */
   const [playTry, setPlayTry] = useState(0);
   const [panel, setPanel] = useState<"episodes" | "comments" | "article" | "detail" | null>(null);
+  /* 预缓存下一集 URL，用于集间过渡消除黑屏（binge 模式下提前拉好） */
+  const [urlBuffer, setUrlBuffer] = useState<Record<string, string>>({});
+  /* 加载失败自动 skip debounce，防止短时间内连续跳过 */
+  const pendingSkipRef = useRef<number | null>(null);
+  /* 当前剧集是否已在缓冲（播放端使用的 key，可能来自 urlBuffer） */
+  const [buffKey, setBuffKey] = useState<string | null>(null);
+  /* #2 集间过渡态：切换时短暂淡出旧视频再淡入新视频，消黑屏 */
+  const [transitioning, setTransitioning] = useState(false);
   /* 连播态(binge)状态机：点「看完整剧」进入，锁定当前剧自动连播(沿用 onEnded→pickEp)。
      进入后禁滑动换剧，返回键/退出按钮/连播完回 feed。see hooks/useBinge.ts */
-  const binge = useBinge();
+  const binge = useBinge(() => {
+    /* #12 看完推荐：连播全部结束，toast 提示推荐 */
+    toast("看完啦，为你推荐更多内容！", "info");
+  });
   const { isBinge: bingeOn, modeRef: bingeRef, enter: enterBinge, exit: exitBinge } = binge;
+  /* #9 续播×连播兼容：若从观看记录进入（有 startEp），自动进入连播并跳到对应集 */
+  const bingeAutoInitRef = useRef(false);
+  /* 详情加载完后再决定是否自动进 binge（避免空 episodes 导致漏触发）*/
   const [descOpen, setDescOpen] = useState(false);
   /* 续播：拿到时长后再 seek 一次（只对进入时那一条生效） */
   const resumeRef = useRef<{ key: string; t: number } | null>(
@@ -115,10 +129,20 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
   const detail = details[curId];
   const curEp = epMap[curId] || 1;
   const playKey = `${curId}:${curEp}`;
-  const playUrl = playUrls[playKey] || "";
+  /* #2 优先用预缓存的 URL（消除集间黑屏） */
+  const playUrl = playUrls[playKey] || urlBuffer[playKey] || "";
   useEffect(() => { videoRef.current?.trace("page.active", { active, view: mode, video_id: curId, episode: curEp }); }, [active, mode, curId, curEp]);
   const episodes = detail?.episodes || [];
   const post = posts[curId];
+
+  /* #9 续播×连播兼容：若从观看记录进入（有 startEp），自动进入连播并跳到对应集 */
+  useEffect(() => {
+    if (bingeAutoInitRef.current) return;
+    if (!startEp || episodes.length <= 1 || curId !== videoIds[startIndex]) return;
+    bingeAutoInitRef.current = true;
+    setEpMap((m) => ({ ...m, [curId]: startEp }));
+    enterBinge();
+  }, [episodes.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* 观看进度：onTime 里每 5 秒落一次；拖动进度条期间忽略底层 timeupdate 防止进度条回跳 */
   const onTimeTick = (t: number) => {
@@ -360,13 +384,53 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
         if (!info?.video_url) throw new Error("暂无播放地址");
         setPlayUrls((m) => ({ ...m, [playKey]: info.video_url }));
         addHistory(curId, curEp);
+        /* #2 预加载下一集 URL，用于集间无缝过渡 */
+        if (bingeRef.current === "binge") {
+          const next = episodes.find((e) => e.ep_num === curEp + 1);
+          if (next) {
+            const nkey = `${curId}:${next.ep_num}`;
+            if (!playUrls[nkey] && !urlBuffer[nkey]) {
+              api.play(curId, next.ep_num).then((ni) => {
+                if (alive && ni?.video_url) setUrlBuffer((b) => ({ ...b, [nkey]: ni.video_url }));
+              }).catch(() => {});
+            }
+          }
+        }
       })
-      .catch((e) => { if (alive) setErr((e as Error).message || "取播放地址失败"); });
+      .catch((e) => {
+        if (!alive) return;
+        /* #8 加载失败降级：连播态且有下一集则自动跳过（debounce 防连跳） */
+        if (bingeRef.current === "binge") {
+          const nextEp = episodes.find((ep) => ep.ep_num === curEp + 1);
+          if (nextEp && (!pendingSkipRef.current || Date.now() - pendingSkipRef.current > 3000)) {
+            pendingSkipRef.current = Date.now();
+            window.setTimeout(() => {
+              pendingSkipRef.current = null;
+              if (pendingSkipRef.current !== null) return; // 已被覆盖
+              setPlayUrls((m) => ({ ...m, [playKey]: "" }));
+              pickEp(nextEp.ep_num);
+            }, 800);
+            return;
+          }
+        }
+        setErr((e as Error).message || "取播放地址失败");
+      });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [curId, curEp, playTry]);
 
-  /* 切换条目/集数时重置播放与缩放状态 */
+  /* #7 onNearEnd：连播模式下，接近末集时回调 */
+  useEffect(() => {
+    if (!onNearEnd || bingeRef.current !== "binge") return;
+    if (episodes.length > 0 && curEp >= episodes.length - 1) onNearEnd();
+  }, [curEp, episodes.length, onNearEnd, bingeRef]);
+
+  /* #2 集间过渡态：切集时先淡出再淡入，消黑屏 */
+  useEffect(() => {
+    if (!transitioning) return;
+    const t = window.setTimeout(() => setTransitioning(false), 300);
+    return () => window.clearTimeout(t);
+  }, [transitioning]);
   useEffect(() => {
     setTime(0); setDuration(0); setBuffered(0); setErr(""); setWaiting(true); setPaused(false); setDescOpen(false);
     setVsize({ w: 0, h: 0 });
@@ -594,7 +658,11 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
               style={!isActive && fs ? { display: "none" } : undefined}
               className={`relative w-full h-full snap-start snap-always ${fs && isActive ? "" : "overflow-hidden"}`}>
               {isActive && playUrl ? (
-                <div className={rotated ? "fs-landscape" : (!isDesktop && fs ? "fs-immersive" : "absolute inset-0")}>
+                <div className={rotated ? "fs-landscape" : (!isDesktop && fs ? "fs-immersive" : "absolute inset-0")}
+                  style={{
+                    opacity: transitioning && buffKey === playKey ? 0 : 1,
+                    transition: transitioning ? "opacity .25s ease-in" : undefined,
+                  }}>
                   <div
                     className="absolute inset-0 overflow-hidden"
                     style={{ touchAction: fs || zoom.scale > 1.05 ? "none" : "pan-y" }}
@@ -630,8 +698,14 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                       onPause={() => setPaused(true)}
                       onWaiting={() => setWaiting(true)}
                       onEnded={() => {
+                        /* #2/#8 切换剧集：优先用预缓存 URL，避免黑屏 */
                         const next = episodes.find((e) => e.ep_num === curEp + 1);
-                        if (next) { pickEp(next.ep_num); return; }
+                        if (next) {
+                          const nk = `${curId}:${next.ep_num}`;
+                          if (urlBuffer[nk]) { setBuffKey(nk); setTransitioning(true); }
+                          pickEp(next.ep_num);
+                          return;
+                        }
                         // 连播态播完最后一集：自动退出连播回 feed（停留在末集，用户可滑动换剧）
                         if (bingeRef.current) exitBinge();
                       }}
