@@ -161,22 +161,29 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const busy = useRef(false);
+  const done = useRef(false);   // 熔断：翻满/空页/返回不足一页都置 true，彻底停掉无限滚动
   const sentinel = useRef<HTMLDivElement>(null);
 
   const loadMore = async () => {
-    if (busy.current || page >= pages) return;
+    if (done.current || busy.current || page >= pages) return;
     busy.current = true;
     setLoading(true);
     try {
       const next = page + 1;
       const res = await api.category(cate, next, 20);
+      const incoming = res?.items || [];
       setItems((prev) => {
         const seen = new Set(prev.map((x) => x.id));
-        return [...prev, ...(res?.items || []).filter((x) => !seen.has(x.id))];
+        return [...prev, ...incoming.filter((x) => !seen.has(x.id))];
       });
       setPage(next);
-      setPages(res?.pagination?.pages || next);
+      const totalPages = res?.pagination?.pages;
+      setPages(typeof totalPages === "number" && totalPages >= next ? totalPages : next);
       setErr(null);
+      // 熔断判定：本页无数据，或返回条数不足一页(说明已到末尾)，或已翻满总页数
+      if (incoming.length === 0 || incoming.length < 20 || (typeof totalPages === "number" && next >= totalPages)) {
+        done.current = true;
+      }
     } catch (e) {
       setErr((e as Error).message || "加载失败");
     } finally {
@@ -189,7 +196,9 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
   useEffect(() => {
     const el = sentinel.current;
     if (!el) return;
-    const io = new IntersectionObserver((es) => { if (es[0].isIntersecting) loadMore(); }, { rootMargin: "600px" });
+    // 已到底则不再挂 observer，杜绝反复触发
+    if (done.current || page >= pages) return;
+    const io = new IntersectionObserver((es) => { if (es[0].isIntersecting && !done.current) loadMore(); }, { rootMargin: "600px" });
     io.observe(el);
     return () => io.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -224,7 +233,7 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
       </div>
       <div className="flex-1 scroll-y px-4 pt-3 pb-8">
         {sorted.length ? (
-          <Masonry videos={sorted} wide={wide} loading={loading && sorted.length === 0}
+          <Masonry videos={sorted} wide={wide} colCount={3} gap="gap-1.5" loading={loading && sorted.length === 0}
             onOpen={(v) => push({ kind: "feed", videoIds: sorted.map((x) => x.id), index: sorted.findIndex((x) => x.id === v.id), title: name })} />
         ) : err ? (
           <Empty icon={<IGrid size={26} />} title="加载失败" sub={err} action="重试" onAction={loadMore} />

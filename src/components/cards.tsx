@@ -35,11 +35,12 @@ export function WaterfallCard({ v, onOpen }: { v: VideoCard; onOpen: () => void 
    导致已加载卡片被挤到别的列（分类里"看中的片跑前跑后"的主因）。
    改为确定性分列：按 index % colCount 固定落入某一列，新数据只追加到列尾，
    已有卡片位置恒定不重排。 */
-export function Masonry({ videos, onOpen, wide = false, gap = "gap-1", loading = false, skeletonCount = 6 }: {
+export function Masonry({ videos, onOpen, wide = false, gap = "gap-1", loading = false, skeletonCount = 6, colCount: colCountProp }: {
   videos: VideoCard[]; onOpen: (v: VideoCard) => void; wide?: boolean; gap?: string;
-  loading?: boolean; skeletonCount?: number;
+  loading?: boolean; skeletonCount?: number; colCount?: number;
 }) {
-  const colCount = wide ? 3 : 2;
+  /* 列数：显式 colCount 优先，否则按宽度定（桌面3/移动2） */
+  const colCount = colCountProp ?? (wide ? 3 : 2);
   const mb = gap === "gap-1" ? "mb-1" : "mb-1.5";
   const gapClass = gap;
   /* 确定性分列：列数随宽度定，卡片按序号取模落入固定列，顺序稳定 */
