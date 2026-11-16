@@ -72,8 +72,10 @@ jobs:
         run: |
           set -euo pipefail
           GRADLE=src-tauri/gen/android/app/build.gradle.kts
+          # Tauri 生成的 gradle 是动态读 properties：versionCode = tauriProperties.getProperty(...).toInt()
+          # 直接把整条表达式替换成字面量 2001002（与原版 1002001 彻底岔开）
           grep -n "versionCode" "$GRADLE"
-          sed -i -E 's/(versionCode[[:space:]]*=[[:space:]]*)[0-9]+/\12001002/' "$GRADLE"
+          sed -i -E 's/versionCode[[:space:]]*=.*/versionCode = 2001002/' "$GRADLE"
           grep -n "versionCode" "$GRADLE"
 
       - name: 编译 APK（按 ABI 分包）
