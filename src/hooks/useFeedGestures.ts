@@ -44,13 +44,15 @@ export function useFeedGestures(opts: {
   setErr: (v: string) => void;
   setTime: (v: number) => void;
   toast: (msg: string, icon?: "ok" | "heart" | "star" | "info") => void;
+  /* 连播态垂直滑动切集：上滑=下一集(+1)，下滑=上一集(-1)；未传则垂直拖不切集 */
+  onBingeSwipe?: (dir: 1 | -1) => void;
 }) {
   const {
     isDesktop, controlsLocked, active, rotated, fs,
     time, duration, playKey, videoIdsLength,
     zoom, videoRef, boxRef,
     setZoom, setHoldSpeed, setSpeedLock, setLockArmed, setScrub, setClean, setErr, setTime,
-    toast,
+    toast, onBingeSwipe,
   } = opts;
 
   /* —— 手势内部 ref（原来散在 Feed.tsx）—— */
@@ -242,6 +244,13 @@ export function useFeedGestures(opts: {
       return;
     }
 
+    /* 连播态垂直拖(pan)：上滑=下一集(+1)，下滑=上一集(-1)。阈值 56px，避免误触 */
+    if (g.mode === "pan" && onBingeSwipe && !cancelled) {
+      const totalDy = rotated ? (e?.clientX ?? g.x) - g.startX : g.startY - (e?.clientY ?? g.y);
+      if (Math.abs(totalDy) >= 56) onBingeSwipe(totalDy > 0 ? 1 : -1);
+      return;
+    }
+
     if (cancelled || g.mode !== "idle") return;
     const moveDist = e ? Math.hypot(e.clientX - g.x, e.clientY - g.y) : 0;
     if (Date.now() - g.t < 260 && moveDist < 16) {
@@ -261,7 +270,7 @@ export function useFeedGestures(opts: {
         }, 250) as unknown as number;
       }
     }
-  }, [active, clearTapTimer, setClean, setErr, setHoldSpeed, setLockArmed, setScrub, setSpeedLock, setTime, toast, videoRef]);
+  }, [active, clearTapTimer, onBingeSwipe, setClean, setErr, setHoldSpeed, setLockArmed, setScrub, setSpeedLock, setTime, toast, videoRef]);
 
   /* 页面隐藏/控制锁定时取消未决手势 */
   useEffect(() => {

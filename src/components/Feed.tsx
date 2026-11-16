@@ -301,9 +301,10 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
     if (!el) return;
     const h = el.clientHeight || 1;
     const i = Math.max(0, Math.min(videoIds.length - 1, Math.round(el.scrollTop / h)));
+    videoRef.current?.trace("feed.scroll", { scrollTop: Math.round(el.scrollTop), h, calcIndex: i, prevIndex: index, video_id: videoIds[i] });
     setIndex((prev) => (prev === i ? prev : i));
     if (onNearEnd && i >= videoIds.length - 3) onNearEnd();
-  }, [videoIds.length, onNearEnd, fs]);
+  }, [videoIds.length, onNearEnd, fs, index, videoIds]);
 
   const go = useCallback((delta: number) => {
     if (bingeRef.current) return; // 连播态锁定换剧（切集走 pickEp，不走 go）
@@ -461,6 +462,13 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
     zoom, videoRef, boxRef,
     setZoom, setHoldSpeed, setSpeedLock, setLockArmed, setScrub, setClean, setErr, setTime,
     toast,
+    /* 连播态垂直滑动切集：上滑(+1)下一集 / 下滑(-1)上一集，边界内切换 */
+    onBingeSwipe: (dir) => {
+      if (!bingeRef.current) return;
+      const next = curEp + dir;
+      if (next < 1 || next > episodes.length) return; // 越界不动（末集下滑不跳剧，返回键才退连播）
+      pickEp(next);
+    },
   });
 
   const lockControls = () => { setPanel(null); setControlsLocked(true); };
@@ -858,15 +866,6 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                     <ICommentF size={26} className="hg-ink hg-ov-shadow" />
                     <span className="text-[10.5px] hg-ink-2 hg-ov-shadow">评论</span>
                   </button>
-                  {/* 看完整剧：进入连播态（锁定当前剧自动连播），仅短剧且有多集时显示 */}
-                  {kind === "video" && episodes.length > 1 && !bingeOn && (
-                    <button onClick={enterBinge} className="flex flex-col items-center gap-1 pressable" aria-label="看完整剧">
-                      <span className="w-[27px] h-[27px] rounded-full bg-primary flex items-center justify-center elev-1">
-                        <IPlayF size={13} className="text-on-primary ml-px" />
-                      </span>
-                      <span className="text-[10.5px] hg-ink-2 hg-ov-shadow">看完整剧</span>
-                    </button>
-                  )}
                   <button onClick={enterFs} className="flex flex-col items-center gap-1 pressable" aria-label="全屏">
                     <IExpand size={26} className="hg-ink hg-ov-shadow" />
                     <span className="text-[10.5px] hg-ink-2 hg-ov-shadow">全屏</span>
@@ -989,12 +988,41 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
                       </div>
                     )}
                   </div>
+                  {/* 红果式「观看完整剧情」底部通栏横幅：仅短剧多集、非连播态显示 */}
+                  {kind === "video" && episodes.length > 1 && !bingeOn && (
+                    <button onClick={enterBinge} aria-label="观看完整剧情"
+                      className="absolute inset-x-0 flex items-center gap-2.5 px-4 h-12 bg-s2 pressable"
+                      style={{ top: "100%" }}>
+                      <span className="w-6 h-6 rounded-[5px] bg-white/12 flex items-center justify-center shrink-0">
+                        <IPlayF size={11} className="hg-ink ml-px" />
+                      </span>
+                      <span className="text-[12.5px] font-semibold hg-ink whitespace-nowrap">观看完整剧情</span>
+                      <span className="text-[12.5px] hg-ink-3">·</span>
+                      <span className="text-[12.5px] hg-ink-2">全{episodes.length}集</span>
+                      <IChevR size={15} className="ml-auto hg-ink-2 shrink-0" />
+                    </button>
+                  )}
                 </div>
               )}
             </section>
           );
         })}
       </div>
+
+      {/* 连播态(binge)底部「选集」通栏：红果式深灰圆角卡片，点开=选集面板 */}
+      {bingeOn && !fs && !isDesktop && kind === "video" && episodes.length > 1 && (
+        <button onClick={() => setPanel("episodes")} aria-label="选集"
+          className="absolute inset-x-3 z-30 flex items-center gap-2 rounded-xl bg-white/8 px-4 h-12 pressable elev-1"
+          style={{ bottom: `calc(var(--sab, 0px) + ${bottomInset + 198}px)` }}>
+          <IList size={17} className="hg-ink shrink-0" />
+          <span className="text-[13px] font-bold hg-ink">选集</span>
+          <span className="hg-ink-3">·</span>
+          <span className="text-[13px] hg-ink-2">{episodes[episodes.length - 1]?.ep_num >= episodes.length ? "已完结" : `更新至${episodes[episodes.length - 1]?.ep_num ?? "?"}集`}</span>
+          <span className="hg-ink-3">·</span>
+          <span className="text-[13px] hg-ink-2">全{episodes.length}集</span>
+          <IChevronUp size={16} className="ml-auto hg-ink-2 shrink-0" />
+        </button>
+      )}
 
       {/* 连播态(binge)顶部悬浮条：剧名 + 集数 + 退出。锁定当前剧，退出或返回键回 feed */}
       {bingeOn && !fs && (
@@ -1006,17 +1034,9 @@ export default function Feed({ videoIds, startIndex = 0, title = "", mode, kind 
             <IBack size={19} />
           </button>
           <div className="flex-1 min-w-0">
-            <div className="text-[13.5px] font-bold hg-ink hg-ov-shadow clamp-1">{meta.title || "连播中"}</div>
-            <div className="text-[10.5px] hg-ink-2 hg-ov-shadow">连播 · 第 {curEp}/{episodes.length || "?"} 集</div>
+            <div className="text-[13.5px] font-bold hg-ink hg-ov-shadow clamp-1">{meta.title || "播放中"}</div>
+            <div className="text-[10.5px] hg-ink-2 hg-ov-shadow">第 {curEp}/{episodes.length || "?"} 集</div>
           </div>
-          <button onClick={() => setPanel("episodes")} aria-label="选集"
-            className="px-3 h-8 rounded-full hg-chip-strong backdrop-blur-md flex items-center gap-1 text-[12px] font-semibold pressable elev-1">
-            <IList size={15} />选集
-          </button>
-          <button onClick={exitBinge} aria-label="退出连播"
-            className="px-3 h-8 rounded-full hg-chip-strong backdrop-blur-md flex items-center gap-1 text-[12px] font-semibold pressable elev-1">
-            <IClose size={15} />退出连播
-          </button>
         </div>
       )}
 
