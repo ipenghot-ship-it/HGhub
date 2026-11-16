@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, fmt } from "../api";
 import type { Post, VideoCard } from "../types";
 import { useStore } from "../store";
@@ -195,11 +195,13 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pages]);
 
-  const sorted = [...items].sort((a, b) => {
+  /* 排序用 useMemo 稳定住：loadMore 追加数据时已加载卡片顺序不变（sort 稳定），
+     只在切换排序键或数据真正变化时才重算，避免渲染期反复重排导致卡片跳动。 */
+  const sorted = useMemo(() => [...items].sort((a, b) => {
     if (sort === "最热") return (b.hot || 0) - (a.hot || 0);
     if (sort === "高分") return (b.score || 0) - (a.score || 0);
     return b.id - a.id;
-  });
+  }), [items, sort]);
 
   return (
     <div className="absolute inset-0 bg-bg flex flex-col">
@@ -222,7 +224,8 @@ export function ChannelPage({ cate, name, onBack, wide }: { cate: string; name: 
       </div>
       <div className="flex-1 scroll-y px-4 pt-3 pb-8">
         {sorted.length ? (
-          <Masonry videos={sorted} wide={wide} onOpen={(v) => push({ kind: "feed", videoIds: sorted.map((x) => x.id), index: sorted.findIndex((x) => x.id === v.id), title: name })} />
+          <Masonry videos={sorted} wide={wide} loading={loading && sorted.length === 0}
+            onOpen={(v) => push({ kind: "feed", videoIds: sorted.map((x) => x.id), index: sorted.findIndex((x) => x.id === v.id), title: name })} />
         ) : err ? (
           <Empty icon={<IGrid size={26} />} title="加载失败" sub={err} action="重试" onAction={loadMore} />
         ) : (

@@ -30,16 +30,39 @@ export function WaterfallCard({ v, onOpen }: { v: VideoCard; onOpen: () => void 
   );
 }
 
-/* ——— 近无缝瀑布流 ——— */
-export function Masonry({ videos, onOpen, wide = false, gap = "gap-1" }: {
+/* ——— 近无缝瀑布流 ———
+   弃用 CSS columns(column-fill:balance)：它每次追加数据都会重新平衡各列，
+   导致已加载卡片被挤到别的列（分类里"看中的片跑前跑后"的主因）。
+   改为确定性分列：按 index % colCount 固定落入某一列，新数据只追加到列尾，
+   已有卡片位置恒定不重排。 */
+export function Masonry({ videos, onOpen, wide = false, gap = "gap-1", loading = false, skeletonCount = 6 }: {
   videos: VideoCard[]; onOpen: (v: VideoCard) => void; wide?: boolean; gap?: string;
+  loading?: boolean; skeletonCount?: number;
 }) {
+  const colCount = wide ? 3 : 2;
   const mb = gap === "gap-1" ? "mb-1" : "mb-1.5";
+  const gapClass = gap;
+  /* 确定性分列：列数随宽度定，卡片按序号取模落入固定列，顺序稳定 */
+  const cols: VideoCard[][] = Array.from({ length: colCount }, () => []);
+  videos.forEach((v, i) => cols[i % colCount].push(v));
+  /* 加载中用骨架占位顶住列高，数据到位原地填充，避免布局塌陷/跳动 */
+  const skeletonPerCol = Math.ceil(skeletonCount / colCount);
   return (
-    <div className={`${wide ? "columns-3 xl:columns-4" : "columns-2"} ${gap} [column-fill:balance]`}>
-      {videos.map((v) => (
-        <div key={v.id} className={`break-inside-avoid ${mb}`}>
-          <WaterfallCard v={v} onOpen={() => onOpen(v)} />
+    <div className={`flex ${gapClass} items-start`}>
+      {cols.map((col, ci) => (
+        <div key={ci} className={`flex-1 min-w-0 flex flex-col ${mb}`}>
+          {col.map((v) => (
+            <div key={v.id} className={mb}>
+              <WaterfallCard v={v} onOpen={() => onOpen(v)} />
+            </div>
+          ))}
+          {loading && col.length === 0 && Array.from({ length: skeletonPerCol }).map((_, si) => (
+            <div key={`sk-${si}`} className={mb}>
+              <div className="relative w-full rounded-(--r-sm) bg-s2 overflow-hidden" style={{ paddingTop: "132%" }}>
+                <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/20" />
+              </div>
+            </div>
+          ))}
         </div>
       ))}
     </div>

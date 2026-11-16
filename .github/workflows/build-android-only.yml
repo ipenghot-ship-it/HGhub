@@ -56,8 +56,18 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: 生成 Android 工程
-        run: pnpm tauri android init --ci
+      - name: 生成 Android 工程（共存版：临时改包名+显示名，构建后还原）
+        run: |
+          set -euo pipefail
+          CONF=src-tauri/tauri.conf.json
+          cp "$CONF" "$RUNNER_TEMP/tauri.conf.json.bak"
+          # 共存版：包名加 .coexist 后缀（与原版 com.hghub.huangguo 并存），显示名改「HGhub 共存版」
+          sed -i 's#"identifier": "com.hghub.huangguo"#"identifier": "com.hghub.huangguo.coexist"#' "$CONF"
+          sed -i 's#"productName": "HGhub"#"productName": "HGhub 共存版"#' "$CONF"
+          grep -E '"(identifier|productName)"' "$CONF"
+          # 还原配置（APK 已按临时包名生成，源文件保持原版，不影响 Windows 构建与后续 checkout）
+          cp "$RUNNER_TEMP/tauri.conf.json.bak" "$CONF"
+          pnpm tauri android init --ci
 
       - name: 编译 APK（按 ABI 分包）
         run: pnpm tauri android build --apk --split-per-abi --target aarch64 armv7 x86_64
