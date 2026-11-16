@@ -56,19 +56,25 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: 生成 Android 工程（共存版：临时改包名+显示名）
+      - name: 生成 Android 工程（共存版：包名 .coexist + 显示名「黄果」+ versionCode 抬高）
         run: |
           set -euo pipefail
           CONF=src-tauri/tauri.conf.json
-          # 共存版：包名加 .coexist 后缀（与原版 com.hghub.huangguo 并存），显示名改「HGhub 共存版」
-          # 注意：必须在 init 和 build 全程保持共存版配置。之前在 init 后立刻还原，
-          # 结果 tauri android build 内部又从还原后的 conf 同步回原版包名，导致共存版失效。
-          # 备份到 $RUNNER_TEMP，构建全部结束后由后续步骤还原，源文件不进 git。
+          # 共存版：三个维度都跟原版(com.hghub.huangguo / HGhub / versionCode 1002001)区分开
+          # ① 包名加 .coexist ② 显示名改「黄果」。必须在 init+build 全程保持，build 完才还原。
           cp "$CONF" "$RUNNER_TEMP/tauri.conf.json.bak"
           sed -i 's#"identifier": "com.hghub.huangguo"#"identifier": "com.hghub.huangguo.coexist"#' "$CONF"
-          sed -i 's#"productName": "HGhub"#"productName": "HGhub 共存版"#' "$CONF"
+          sed -i 's#"productName": "HGhub"#"productName": "黄果"#' "$CONF"
           grep -E '"(identifier|productName)"' "$CONF"
           pnpm tauri android init --ci
+
+      - name: 抬高共存版 versionCode（避免与原版 1002001 撞车导致「已安装」冲突）
+        run: |
+          set -euo pipefail
+          GRADLE=src-tauri/gen/android/app/build.gradle.kts
+          grep -n "versionCode" "$GRADLE"
+          sed -i -E 's/(versionCode[[:space:]]*=[[:space:]]*)[0-9]+/\12001002/' "$GRADLE"
+          grep -n "versionCode" "$GRADLE"
 
       - name: 编译 APK（按 ABI 分包）
         run: pnpm tauri android build --apk --split-per-abi --target aarch64 armv7 x86_64
